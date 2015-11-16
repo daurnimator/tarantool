@@ -40,6 +40,7 @@
 #include "box/lua/info.h"
 #include "box/lua/session.h"
 #include "box/lua/net_box.h"
+#include "box/lua/xlog_parser.h"
 #include "box/tuple.h"
 
 #include "lua/utils.h"
@@ -726,6 +727,7 @@ box_lua_init(struct lua_State *L)
 	box_lua_stat_init(L);
 	box_lua_sophia_init(L);
 	box_lua_session_init(L);
+	box_lua_xlog_parser_init(L);
 
 	/* Load Lua extension */
 	for (const char **s = lua_sources; *s; s++) {
