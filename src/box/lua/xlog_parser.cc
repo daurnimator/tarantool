@@ -203,7 +203,13 @@ next_row(struct lua_State *L, struct xlog_cursor *cur,
 
 	lua_newtable(L);
 	lua_pushstring(L, "type");
-	lua_pushinteger(L, row->type);
+	if (row->type < IPROTO_TYPE_STAT_MAX && iproto_type_strs[row->type]) {
+		lua_pushstring(L, iproto_type_strs[row->type]);
+	} else {
+		char buf[32];
+		sprintf(buf, "UNKNOWN#%u", row->type);
+		lua_pushstring(L, buf);
+	}
 	lua_settable(L, -3);
 	lua_pushstring(L, "lsn");
 	lua_pushinteger(L, row->lsn);
