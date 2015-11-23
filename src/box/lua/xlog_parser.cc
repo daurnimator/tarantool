@@ -46,9 +46,9 @@ extern "C" {
 #include "lua/utils.h"
 
 static int
-parse_mp(struct lua_State *L, const char **beg)
+parse_mp(struct lua_State *L, const char **beg, const char *end)
 {
-	uint32_t size;
+	uint32_t size, i;
 	switch(mp_typeof(**beg)) {
 	case MP_UINT:
 		lua_pushinteger(L, mp_decode_uint(beg));
@@ -56,24 +56,37 @@ parse_mp(struct lua_State *L, const char **beg)
 	case MP_STR:
 		const char *buf;
 		buf = mp_decode_str(beg, &size);
+		if (*beg > end) {
+			i = size - (*beg - end);
+			say_warn("warning: decoded %u symbols from MP_STRING, "
+				 "%u expected", i, size);
+			*beg = end;
+			size = i;
+		}
 		lua_pushlstring(L, buf, size);
 		break;
 	case MP_ARRAY:
 		size = mp_decode_array(beg);
 		lua_newtable(L);
-		for(uint32_t i = 0; i < size; i++) {
-			parse_mp(L, beg);
+		for(i = 0; i < size && *beg < end; i++) {
+			parse_mp(L, beg, end);
 			lua_rawseti(L, -2, i + 1);
 		}
+		if (i != size)
+			say_warn("warning: decoded %u values from MP_ARRAY, "
+				 "%u expected", i, size);
 		break;
 	case MP_MAP:
 		size = mp_decode_map(beg);
 		lua_newtable(L);
-		for (uint32_t i = 0; i < size; i++) {
-			parse_mp(L, beg);
-			parse_mp(L, beg);
+		for (i = 0; i < size && *beg < end; i++) {
+			parse_mp(L, beg, end);
+			parse_mp(L, beg, end);
 			lua_settable(L, -3);
 		}
+		if (i != size)
+			say_warn("warning: decoded %u values from MP_MAP, "
+				 "%u expected", i, size);
 		break;
 	case MP_BOOL:
 		lua_pushboolean(L, mp_decode_bool(beg));
@@ -100,12 +113,14 @@ parse_mp(struct lua_State *L, const char **beg)
 }
 
 static int
-parse_body(struct lua_State *L, const char *ptr)
+parse_body(struct lua_State *L, const char *ptr, size_t len)
 {
 	const char **beg = &ptr;
+	const char *end = ptr + len;
 	if (mp_typeof(**beg) == MP_MAP) {
 		uint32_t size = mp_decode_map(beg);
-		for (uint32_t i = 0; i < size; i++) {
+		uint32_t i;
+		for (i = 0; i < size && *beg < end; i++) {
 			if (mp_typeof(**beg) == MP_UINT) {
 				char buf[32];
 				uint32_t v = mp_decode_uint(beg);
@@ -116,9 +131,12 @@ parse_body(struct lua_State *L, const char *ptr)
 					sprintf(buf, "unknown_key#%u", v);
 				lua_pushstring(L, buf);
 			}
-			parse_mp(L, beg);
+			parse_mp(L, beg, end);
 			lua_settable(L, -3);
 		}
+		if (i != size)
+			say_warn("warning: decoded %u values from MP_MAP, "
+				 "%u expected", i, size);
 	}
 	return 0;
 }
@@ -139,56 +157,49 @@ lbox_xlog_parser_open(struct lua_State *L)
 {
 
 	int args_n = lua_gettop(L);
-	if (args_n != 1 || !lua_isstring(L, 1)) {
-usage:
-		luaL_error(L, "Usage: parser.open(\"path/to/logs/"
-			      "log_number(.xlog/.snap)\")");
-	}
-	const char *fname = luaL_checkstring(L, 1);
-	xdir dir;
-	xdir_type log_type;
-	const int ext_len = 5;
-	if (strlen(fname) < ext_len)
-		goto usage;
-	if (strncmp(fname + strlen(fname) - ext_len, ".xlog", ext_len) == 0)
-		log_type = XLOG;
-	else if(strncmp(fname + strlen(fname) - ext_len, ".snap", ext_len) == 0)
-		log_type = SNAP;
-	else
-		goto usage;
-	int i = strlen(fname) - 1;
-	while (fname[i] != '.')
-		i--;
-	int fname_end = i;
-	i--;
-	while (i >= 0 && fname[i] != '/')
-		i--;
+	if (args_n != 1 || !lua_isstring(L, 1))
+		luaL_error(L, "Usage: parser.open(log_filename)");
 
-	char buf[MAX(i + 1, fname_end - i)];
+	const char *filename = luaL_checkstring(L, 1);
 
-	memcpy(buf, fname + i + 1, fname_end - i - 1);
-	buf[fname_end - i - 1] = 0;
-	long long log_number = -1;
-	sscanf(buf, "%lld", &log_number);
-	if (log_number == -1)
-		luaL_error(L, "filename must be nubmer");
-	if (i < 0) {
-		buf[0] = '.';
-		buf[1] = 0;
-	} else {
-		memcpy(buf, fname, i + 1);
-		buf[i] = 0;
+	FILE *f = fopen(filename, "r");
+	if (f == NULL)
+		luaL_error(L, "%s: failed to open file", filename);
+
+	xlog *l = (struct xlog *) calloc(1, sizeof(*l));
+
+	if (l == NULL)
+		tnt_raise(OutOfMemory, sizeof(*l), "malloc", "struct xlog");
+
+	l->f = f;
+	l->filename[0] = 0;
+	l->mode = LOG_READ;
+	l->dir = NULL;
+	l->is_inprogress = false;
+	l->eof_read = false;
+	vclock_create(&l->vclock);
+
+
+	char filetype[32], version[32], buf[256];
+	if (fgets(filetype, sizeof(filetype), f) == NULL ||
+	    fgets(version, sizeof(version), f) == NULL) {
+		luaL_error(L, "%s: failed to read log file header", filename);
 	}
-	tt_uuid  uuid_zero;
-	memset(&uuid_zero, 0, sizeof(uuid_zero));
-	try {
-		xdir_create(&dir, buf, log_type, &uuid_zero);
-	} catch(...) {
-		printf("Exception\n");
-		return 0;
+
+	if (strcmp("0.12\n", version) != 0) {
+		luaL_error(L, "%s: unsupported file format version", filename);
 	}
-	xlog *plog = xlog_open(&dir, (int64_t)log_number);
-	lua_pushlightuserdata(L, plog);
+	for (;;) {
+		if (fgets(buf, sizeof(buf), f) == NULL) {
+			luaL_error(L, "%s: failed to read log file header",
+				  filename);
+		}
+		/** Empty line indicates the end of file header. */
+		if (strcmp(buf, "\n") == 0)
+			break;
+		/* Skip header */
+	}
+	lua_pushlightuserdata(L, l);
 	return 1;
 }
 
@@ -233,7 +244,8 @@ next_row(struct lua_State *L, struct xlog_cursor *cur,
 		}
 
 		lua_newtable(L);
-		parse_body(L, (char *)row->body[i].iov_base);
+		parse_body(L, (char *)row->body[i].iov_base,
+			   row->body[i].iov_len);
 		lua_settable(L, -3);  /* BODY */
 	}
 	return 0;
