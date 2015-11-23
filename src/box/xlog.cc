@@ -432,7 +432,7 @@ error:
 		return 1;
 
 	/* Validate checksum */
-	if (crc32_calc(0, bodybuf, len) != crc32c) {
+	if (!row->crc_not_check && crc32_calc(0, bodybuf, len) != crc32c) {
 		char buf[PATH_MAX];
 
 		snprintf(buf, sizeof(buf), "%s: row checksum mismatch (expected %u)"

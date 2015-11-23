@@ -155,7 +155,6 @@ lbox_xlog_parser_close(struct lua_State *L)
 static int
 lbox_xlog_parser_open(struct lua_State *L)
 {
-
 	int args_n = lua_gettop(L);
 	if (args_n != 1 || !lua_isstring(L, 1))
 		luaL_error(L, "Usage: parser.open(log_filename)");
@@ -206,7 +205,7 @@ lbox_xlog_parser_open(struct lua_State *L)
 static int
 next_row(struct lua_State *L, struct xlog_cursor *cur,
 	 struct xrow_header *row) {
-
+	row->crc_not_check = 1;
 	if (xlog_cursor_next(cur, row) != 0)
 		return -1;
 	lua_newtable(L);
