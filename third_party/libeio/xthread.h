@@ -49,25 +49,22 @@ typedef pthread_cond_t xcond_t;
 #define X_COND_INIT                     PTHREAD_COND_INITIALIZER
 #define X_COND_CREATE(cond)		pthread_cond_init (&(cond), 0)
 #define X_COND_SIGNAL(cond)             pthread_cond_signal (&(cond))
+#define X_COND_BROADCAST(cond)          pthread_cond_broadcast (&(cond))
 #define X_COND_WAIT(cond,mutex)         pthread_cond_wait (&(cond), &(mutex))
 #define X_COND_TIMEDWAIT(cond,mutex,to) pthread_cond_timedwait (&(cond), &(mutex), &(to))
 
 typedef pthread_t xthread_t;
 #define X_THREAD_PROC(name) static void *name (void *thr_arg)
 #define X_THREAD_ATFORK(a,b,c)
+#define X_THREAD_SELF() pthread_self()
+#define X_THREAD_JOIN(t) pthread_join(t,NULL)
 
 static int
 xthread_create (xthread_t *tid, void *(*proc)(void *), void *arg)
 {
   int retval;
-  pthread_attr_t attr;
 
-  pthread_attr_init (&attr);
-  pthread_attr_setdetachstate (&attr, PTHREAD_CREATE_DETACHED);
-
-  retval = pthread_create (tid, &attr, proc, arg) == 0;
-
-  pthread_attr_destroy (&attr);
+  retval = pthread_create (tid, 0, proc, arg) == 0;
 
   return retval;
 }
@@ -121,12 +118,15 @@ typedef pthread_cond_t xcond_t;
 #define X_COND_INIT			PTHREAD_COND_INITIALIZER
 #define X_COND_CREATE(cond)		pthread_cond_init (&(cond), 0)
 #define X_COND_SIGNAL(cond)		pthread_cond_signal (&(cond))
+#define X_COND_BROADCAST(cond)		pthread_cond_broadcast (&(cond))
 #define X_COND_WAIT(cond,mutex)		pthread_cond_wait (&(cond), &(mutex))
 #define X_COND_TIMEDWAIT(cond,mutex,to)	pthread_cond_timedwait (&(cond), &(mutex), &(to))
 
 typedef pthread_t xthread_t;
 #define X_THREAD_PROC(name) static void *name (void *thr_arg)
 #define X_THREAD_ATFORK(prepare,parent,child) pthread_atfork (prepare, parent, child)
+#define X_THREAD_SELF() pthread_self()
+#define X_THREAD_JOIN(t) pthread_join(t,NULL)
 
 // the broken bsd's once more
 #ifndef PTHREAD_STACK_MIN
@@ -145,7 +145,6 @@ xthread_create (xthread_t *tid, void *(*proc)(void *), void *arg)
   pthread_attr_t attr;
 
   pthread_attr_init (&attr);
-  pthread_attr_setdetachstate (&attr, PTHREAD_CREATE_DETACHED);
   if (X_STACKSIZE != 0)
     pthread_attr_setstacksize (&attr, PTHREAD_STACK_MIN < X_STACKSIZE ?  X_STACKSIZE : PTHREAD_STACK_MIN);
 #ifdef PTHREAD_SCOPE_PROCESS

@@ -247,6 +247,7 @@ enum {
 struct eio_req
 {
   eio_req volatile *next; /* private ETP */
+  void *pool_user; /* private ETP */
 
   eio_wd wd;       /* all applicable requests: working directory of pathname, old name; wd_open: return wd */
 
@@ -297,7 +298,7 @@ enum {
  * and eio_poll_cb needs to be invoked (it MUST NOT call eio_poll_cb itself).
  * done_poll is called when the need to poll is gone.
  */
-int eio_init (void (*want_poll)(void), void (*done_poll)(void));
+int eio_init (void *, void (*want_poll)(void *), void (*done_poll)(void *));
 
 /* must be called regularly to handle pending requests */
 /* returns 0 if all requests were handled, -1 if not, or the value of EIO_FINISH if != 0 */
