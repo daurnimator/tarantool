@@ -100,11 +100,13 @@ access_check_ddl(uint32_t owner_uid)
 	 * there is no such thing in Tarantool as GRANT OPTION or
 	 * ALTER privilege.
 	 */
+#if 0
 	if (owner_uid != cr->uid && cr->uid != ADMIN) {
 		struct user *user = user_cache_find(cr->uid);
 		tnt_raise(ClientError, ER_ACCESS_DENIED,
 			  "Create or drop", user->name);
 	}
+#endif
 }
 
 /**
@@ -445,7 +447,7 @@ space_def_create_from_tuple(struct space_def *def, struct tuple *tuple,
 
 	space_def_init_flags(def, tuple);
 	space_def_check(def, namelen, engine_namelen, errcode);
-	//access_check_ddl(def->uid);
+	access_check_ddl(def->uid);
 }
 
 /* }}} */
