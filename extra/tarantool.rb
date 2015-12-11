@@ -10,7 +10,7 @@ class Tarantool < Formula
   option 'with-tests', "Run Tests after building"
 
   stable do
-    url 'https://github.com/tarantool/tarantool.git', :branch => "stable", :shallow => false
+    url 'https://github.com/tarantool/tarantool.git', :branch => "dgreenru-ddl-priv", :shallow => false
     depends_on 'e2fsprogs' => :recommended
     if build.with? 'tests'
       depends_on 'python-daemon' => [:python, "daemon",  :build]
